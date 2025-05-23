@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Battery Tracker Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f8f8f8;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      padding: 15px 20px;
+      background-color: white;
+      box-shadow: 0px 2px 4px rgba(0,0,0,0.1);
+      z-index: 10;
+      position: relative;
+    }
+
+    .container-wrapper {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 80px);
+      margin-top: 10px;
+    }
+
+    .container {
+      display: flex;
+      height: 100vh;
+    }
+
+    .tabs {
+      flex: 0 0 250px;
+      background-color: #2C3E50;
+      color: white;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .tab-button {
+      padding: 12px;
+      text-align: left;
+      cursor: pointer;
+      border-radius: 25px;
+      background: linear-gradient(45deg, #007BFF, #00C853);
+      transition: all 0.3s ease-in-out;
+      padding-left: 20px;
+      font-size: 18px;
+      white-space: nowrap;
+    }
+
+    .tab-button:hover {
+      background: linear-gradient(45deg, #00C853, #007BFF);
+    }
+
+    .tab-button.active {
+      background: linear-gradient(45deg, #FF9800, #F44336);
+    }
+
+    .status {
+      margin-top: 20px;
+      font-size: 14px;
+    }
+
+    .main-content {
+      flex: 1;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .tab-content {
+      display: none;
+      height: 100%;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    #leaflet-map {
+      height: 100%;
+      width: 100%;
+      border-radius: 10px;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      margin-top: 20px;
+    }
+
+    #movement-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      font-size: 14px;
+    }
+
+    #movement-table th,
+    #movement-table td {
+      border: 1px solid #ccc;
+      padding: 8px 12px;
+      text-align: center;
+    }
+
+    #movement-table thead {
+      background-color: #f2f2f2;
+      font-weight: bold;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0px 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    #battery-progress {
+      height: 10px;
+      background: #ddd;
+      border-radius: 5px;
+      margin-top: 10px;
+    }
+
+    #battery-progress div {
+      height: 100%;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display: flex; justify-content: center; align-items: center; gap: 20px;">
+      <img src="logo.png" alt="Arcadis Logo" style="height: 50px;" />
+      <div style="text-align: left;">
+        <h1 style="margin: 0; color: black; font-size: 25px;">Battery Tracker Dashboard</h1>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="tabs">
+      <button class="tab-button active" data-tab="map">🌍 Map</button>
+      <button class="tab-button" data-tab="overview">📋 Movement Overview</button>
+      <button class="tab-button" data-tab="battery">🔋 Battery Level</button>
+      <button class="tab-button" onclick="connectToSerial()">🔌 Connect to Arduino</button>
+      <div class="status" id="status">Status: Not Connected ❌</div>
+    </div>
+
+    <div class="main-content">
+      <div id="map" class="tab-content active">
+        <h2>Battery Location</h2>
+        <div id="leaflet-map"></div>
+      </div>
+
+      <div id="overview" class="tab-content">
+        <div class="card">
+          <h2>📋 Movement Overview</h2>
+
+          <!-- Search Bar -->
+          <div style="display: flex; justify-content: center; margin-bottom: 15px;">
+            <div style="position: relative; width: 250px;">
+              <input
+                type="text"
+                id="searchBar"
+                placeholder="Search Battery ID"
+                style="
+                  width: 100%;
+                  padding: 8px 35px 8px 12px;
+                  border-radius: 20px;
+                  border: 1px solid #dcdcdc;
+                  font-size: 14px;
+                  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                  outline: none;
+                  transition: all 0.2s ease;
+                "
+                onfocus="this.style.boxShadow='0 0 4px #4285f4';"
+                onblur="this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)';"
+              />
+              <span style="
+                position: absolute;
+                right: 10px;
+                top: 50%;
+                transform: translateY(-50%);
+                font-size: 16px;
+                color: #999;">🔍</span>
+            </div>
+          </div>
+
+          <!-- Table -->
+          <div class="table-wrapper">
+            <table id="movement-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Battery ID</th>
+                  <th>Start Point</th>
+                  <th>Stop Point</th>
+                  <th>Final Destination</th>
+                  <th>Distance (km)</th>
+                  <th>Avg Speed (km/h)</th>
+                  <th>Duration (min)</th>
+                </tr>
+              </thead>
+              <tbody id="movementData"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="battery" class="tab-content">
+        <div class="card">
+          <h2>Battery Charging Status</h2>
+          <div id="battery-level-text">Battery Level: --%</div>
+          <div id="battery-progress">
+            <div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let map, marker;
+
+    function initLeafletMap() {
+      const rasoolpura = [17.4346, 78.4436];
+      map = L.map('leaflet-map').setView(rasoolpura, 15);
+      L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        attribution: '© Google Maps'
+      }).addTo(map);
+      marker = L.marker(rasoolpura).addTo(map).bindPopup("📍 Rasoolpura").openPopup();
+    }
+
+    window.onload = () => initLeafletMap();
+
+    const tabs = document.querySelectorAll('.tab-button');
+    const contents = document.querySelectorAll('.tab-content');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const id = tab.getAttribute('data-tab');
+        tabs.forEach(t => t.classList.remove('active'));
+        contents.forEach(c => {
+          c.classList.remove('active');
+          c.style.display = 'none';
+        });
+        tab.classList.add('active');
+        const content = document.getElementById(id);
+        content.classList.add('active');
+        content.style.display = 'block';
+        if (id === 'map') initLeafletMap();
+      });
+    });
+
+    let port, reader;
+    let decoder = new TextDecoderStream();
+    let buffer = "";
+
+    async function connectToSerial() {
+      if (!("serial" in navigator)) {
+        alert("Web Serial API not supported.");
+        return;
+      }
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 9600 });
+        port.readable.pipeTo(decoder.writable);
+        reader = decoder.readable.getReader();
+        document.getElementById("status").textContent = "Status: Connected ✅";
+        readSerialData();
+      } catch (err) {
+        console.error(err);
+        document.getElementById("status").textContent = "Status: Error ❌";
+      }
+    }
+
+    async function readSerialData() {
+      while (true) {
+        try {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += value;
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+          for (const line of lines) {
+            processLine(line.trim());
+          }
+        } catch (error) {
+          console.error("Serial Read Error:", error);
+          break;
+        }
+      }
+    }
+
+    function processLine(line) {
+      console.log("From Arduino:", line);
+    }
+
+    function updateBatteryLevel(level) {
+      const text = document.getElementById('battery-level-text');
+      const bar = document.getElementById('battery-progress').firstElementChild;
+      if (level === null) {
+        text.textContent = `Battery Level: --%`;
+        bar.style.width = '0%';
+        bar.style.backgroundColor = '#ccc';
+        return;
+      }
+      text.textContent = `Battery Level: ${level}%`;
+      bar.style.width = `${level}%`;
+      bar.style.backgroundColor = level > 50 ? '#4CAF50' : level > 20 ? '#FFEB3B' : '#F44336';
+    }
+
+    function addMovementData(date, batteryId, startPoint, stopPoint, destination, distance, speed, duration) {
+      const table = document.getElementById('movementData');
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${date}</td>
+        <td>${batteryId}</td>
+        <td>${startPoint}</td>
+        <td>${stopPoint}</td>
+        <td>${destination}</td>
+        <td>${distance}</td>
+        <td>${speed}</td>
+        <td>${duration}</td>`;
+      table.appendChild(row);
+    }
+
+    // Search Bar Filter Logic
+    document.getElementById('searchBar').addEventListener('input', function () {
+      const filter = this.value.trim().toLowerCase();
+      const rows = document.querySelectorAll('#movementData tr');
+      rows.forEach(row => {
+        const batteryId = row.cells[1].textContent.toLowerCase();
+        row.style.display = batteryId.includes(filter) ? '' : 'none';
+      });
+    });
+  </script>
+</body>
+</html>
